@@ -19,7 +19,7 @@ package org.apache.maven.plugins.clean;
  * under the License.
  */
 
-import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.api.plugin.MojoException;
 import org.apache.maven.plugin.testing.AbstractMojoTestCase;
 
 import java.io.File;
@@ -176,7 +176,7 @@ public class CleanMojoTest
 
             fail( "Should fail to delete a file treated as a directory" );
         }
-        catch ( MojoExecutionException expected )
+        catch ( MojoException expected )
         {
             assertTrue( true );
         }
@@ -237,7 +237,7 @@ public class CleanMojoTest
             mojo.execute();
             fail( "Should fail to delete a file that is locked" );
         }
-        catch ( MojoExecutionException expected )
+        catch ( MojoException expected )
         {
             assertTrue( true );
         }
@@ -277,7 +277,7 @@ public class CleanMojoTest
             mojo.execute();
             assertTrue( true );
         }
-        catch ( MojoExecutionException expected )
+        catch ( MojoException expected )
         {
             fail( "Should display a warning when deleting a file that is locked" );
         }

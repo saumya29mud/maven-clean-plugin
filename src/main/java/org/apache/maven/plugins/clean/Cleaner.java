@@ -19,22 +19,24 @@ package org.apache.maven.plugins.clean;
  * under the License.
  */
 
+import javax.annotation.Nonnull;
+
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.function.Consumer;
 
-import org.apache.maven.execution.ExecutionListener;
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.plugin.logging.Log;
+import org.apache.maven.api.Event;
+import org.apache.maven.api.Listener;
+import org.apache.maven.api.Session;
+import org.apache.maven.api.SessionData;
 import org.apache.maven.shared.utils.Os;
-import org.eclipse.aether.SessionData;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.maven.plugins.clean.CleanMojo.FAST_MODE_BACKGROUND;
 import static org.apache.maven.plugins.clean.CleanMojo.FAST_MODE_DEFER;
@@ -47,6 +49,8 @@ import static org.apache.maven.plugins.clean.CleanMojo.FAST_MODE_DEFER;
 class Cleaner
 {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger( Cleaner.class );
+
     private static final boolean ON_WINDOWS = Os.isFamily( Os.FAMILY_WINDOWS );
 
     private static final String LAST_DIRECTORY_TO_DELETE = Cleaner.class.getName() + ".lastDirectoryToDelete";
@@ -54,15 +58,15 @@ class Cleaner
     /**
      * The maven session.  This is typically non-null in a real run, but it can be during unit tests.
      */
-    private final MavenSession session;
+    private final Session session;
 
-    private final Logger logDebug;
+    private final Consumer<String> logDebug;
 
-    private final Logger logInfo;
+    private final Consumer<String> logInfo;
 
-    private final Logger logVerbose;
+    private final Consumer<String> logVerbose;
 
-    private final Logger logWarn;
+    private final Consumer<String> logWarn;
 
     private final File fastDir;
 
@@ -70,17 +74,16 @@ class Cleaner
 
     /**
      * Creates a new cleaner.
-     * @param log The logger to use, may be <code>null</code> to disable logging.
      * @param verbose Whether to perform verbose logging.
      * @param fastMode The fast deletion mode
      */
-    Cleaner( MavenSession session, final Log log, boolean verbose, File fastDir, String fastMode )
+    Cleaner( Session session, boolean verbose, File fastDir, String fastMode )
     {
-        logDebug = ( log == null || !log.isDebugEnabled() ) ? null : log::debug;
+        logDebug = LOGGER::debug;
 
-        logInfo = ( log == null || !log.isInfoEnabled() ) ? null : log::info;
+        logInfo = LOGGER::info;
 
-        logWarn = ( log == null || !log.isWarnEnabled() ) ? null : log::warn;
+        logWarn = LOGGER::warn;
 
         logVerbose = verbose ? logInfo : logDebug;
 
@@ -109,19 +112,13 @@ class Cleaner
         {
             if ( !basedir.exists() )
             {
-                if ( logDebug != null )
-                {
-                    logDebug.log( "Skipping non-existing directory " + basedir );
-                }
+                logDebug.accept( "Skipping non-existing directory " + basedir );
                 return;
             }
             throw new IOException( "Invalid base directory " + basedir );
         }
 
-        if ( logInfo != null )
-        {
-            logInfo.log( "Deleting " + basedir + ( selector != null ? " (" + selector + ")" : "" ) );
-        }
+        logInfo.accept( "Deleting " + basedir + ( selector != null ? " (" + selector + ")" : "" ) );
 
         File file = followSymlinks ? basedir : basedir.getCanonicalFile();
 
@@ -153,7 +150,7 @@ class Cleaner
                     Files.move( baseDir, tmpDir, StandardCopyOption.REPLACE_EXISTING );
                     if ( session != null )
                     {
-                        session.getRepositorySession().getData().set( LAST_DIRECTORY_TO_DELETE, baseDir.toFile() );
+                        session.getData().set( LAST_DIRECTORY_TO_DELETE, baseDir.toFile() );
                     }
                     baseDir = tmpDir;
                 }
@@ -165,11 +162,7 @@ class Cleaner
             }
             catch ( IOException e )
             {
-                if ( logDebug != null )
-                {
-                    // TODO: this Logger interface cannot log exceptions and needs refactoring
-                    logDebug.log( "Unable to fast delete directory: " + e );
-                }
+                logDebug.accept( "Unable to fast delete directory: " + e );
                 return false;
             }
         }
@@ -183,12 +176,9 @@ class Cleaner
         }
         catch ( IOException e )
         {
-            if ( logDebug != null )
-            {
-                // TODO: this Logger interface cannot log exceptions and needs refactoring
-                logDebug.log( "Unable to fast delete directory as the path "
-                        + fastDir + " does not point to a directory or cannot be created: " + e );
-            }
+            // TODO: this Logger interface cannot log exceptions and needs refactoring
+            logDebug.accept( "Unable to fast delete directory as the path "
+                    + fastDir + " does not point to a directory or cannot be created: " + e );
             return false;
         }
 
@@ -206,11 +196,8 @@ class Cleaner
         }
         catch ( IOException e )
         {
-            if ( logDebug != null )
-            {
-                // TODO: this Logger interface cannot log exceptions and needs refactoring
-                logDebug.log( "Unable to fast delete directory: " + e );
-            }
+            // TODO: this Logger interface cannot log exceptions and needs refactoring
+            logDebug.accept( "Unable to fast delete directory: " + e );
             return false;
         }
     }
@@ -259,14 +246,14 @@ class Cleaner
                         }
                     }
                 }
-                else if ( logDebug != null )
+                else
                 {
-                    logDebug.log( "Not recursing into symlink " + file );
+                    logDebug.accept( "Not recursing into symlink " + file );
                 }
             }
-            else if ( logDebug != null )
+            else
             {
-                logDebug.log( "Not recursing into directory without included files " + file );
+                logDebug.accept( "Not recursing into directory without included files " + file );
             }
         }
 
@@ -276,15 +263,15 @@ class Cleaner
             {
                 if ( isDirectory )
                 {
-                    logVerbose.log( "Deleting directory " + file );
+                    logVerbose.accept( "Deleting directory " + file );
                 }
                 else if ( file.exists() )
                 {
-                    logVerbose.log( "Deleting file " + file );
+                    logVerbose.accept( "Deleting file " + file );
                 }
                 else
                 {
-                    logVerbose.log( "Deleting dangling symlink " + file );
+                    logVerbose.accept( "Deleting dangling symlink " + file );
                 }
             }
             result.failures += delete( file, failOnError, retryOnError );
@@ -349,10 +336,7 @@ class Cleaner
                 }
                 else
                 {
-                    if ( logWarn != null )
-                    {
-                        logWarn.log( "Failed to delete " + file );
-                    }
+                    logWarn.accept( "Failed to delete " + file );
                     return 1;
                 }
             }
@@ -373,13 +357,6 @@ class Cleaner
             failures += result.failures;
             excluded |= result.excluded;
         }
-
-    }
-
-    private interface Logger
-    {
-
-        void log( CharSequence message );
 
     }
 
@@ -473,7 +450,7 @@ class Cleaner
             {
                 if ( cleaner.session != null )
                 {
-                    SessionData data = cleaner.session.getRepositorySession().getData();
+                    SessionData data = cleaner.session.getData();
                     File lastDir = ( File ) data.get( LAST_DIRECTORY_TO_DELETE );
                     if ( lastDir != null )
                     {
@@ -513,16 +490,9 @@ class Cleaner
          */
         private void wrapExecutionListener()
         {
-            ExecutionListener executionListener = cleaner.session.getRequest().getExecutionListener();
-            if ( executionListener == null
-                    || !Proxy.isProxyClass( executionListener.getClass() )
-                    || !( Proxy.getInvocationHandler( executionListener ) instanceof SpyInvocationHandler ) )
+            if ( cleaner.session.getListeners().stream().noneMatch( l -> l instanceof CleanerListener ) )
             {
-                ExecutionListener listener = ( ExecutionListener ) Proxy.newProxyInstance(
-                        ExecutionListener.class.getClassLoader(),
-                        new Class[] { ExecutionListener.class },
-                        new SpyInvocationHandler( executionListener ) );
-                cleaner.session.getRequest().setExecutionListener( listener );
+                cleaner.session.registerListener( new CleanerListener() );
             }
         }
 
@@ -538,7 +508,7 @@ class Cleaner
                 {
                     try
                     {
-                        cleaner.logInfo.log( "Waiting for background file deletion" );
+                        cleaner.logInfo.accept( "Waiting for background file deletion" );
                         while ( status != STOPPED )
                         {
                             wait();
@@ -554,29 +524,16 @@ class Cleaner
 
     }
 
-    static class SpyInvocationHandler implements InvocationHandler
+    static class CleanerListener implements Listener
     {
-        private final ExecutionListener delegate;
-
-        SpyInvocationHandler( ExecutionListener delegate )
-        {
-            this.delegate = delegate;
-        }
-
         @Override
-        public Object invoke( Object proxy, Method method, Object[] args ) throws Throwable
+        public void onEvent( @Nonnull Event event )
         {
-            if ( "sessionEnded".equals( method.getName() ) )
+            if ( event.getType() == Event.Type.SessionEnded )
             {
                 BackgroundCleaner.sessionEnd();
             }
-            if ( delegate != null )
-            {
-                return method.invoke( delegate, args );
-            }
-            return null;
         }
-
     }
 
 }

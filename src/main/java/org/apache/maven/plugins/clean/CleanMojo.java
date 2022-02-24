@@ -19,11 +19,12 @@ package org.apache.maven.plugins.clean;
  * under the License.
  */
 
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.plugin.AbstractMojo;
-import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugins.annotations.Mojo;
-import org.apache.maven.plugins.annotations.Parameter;
+import org.apache.maven.api.Session;
+import org.apache.maven.api.plugin.MojoException;
+import org.apache.maven.api.plugin.annotations.Mojo;
+import org.apache.maven.api.plugin.annotations.Parameter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -44,9 +45,8 @@ import java.io.IOException;
  * @see org.apache.maven.plugins.clean.Fileset
  * @since 2.0
  */
-@Mojo( name = "clean", threadSafe = true )
+@Mojo( name = "clean" )
 public class CleanMojo
-    extends AbstractMojo
 {
 
     public static final String FAST_MODE_BACKGROUND = "background";
@@ -54,6 +54,8 @@ public class CleanMojo
     public static final String FAST_MODE_AT_END = "at-end";
 
     public static final String FAST_MODE_DEFER = "defer";
+
+    private static final Logger LOGGER = LoggerFactory.getLogger( CleanMojo.class );
 
     /**
      * This is where build results go.
@@ -209,21 +211,21 @@ public class CleanMojo
     private String fastMode;
 
     @Parameter( defaultValue = "${session}", readonly = true )
-    private MavenSession session;
+    private Session session;
 
     /**
      * Deletes file-sets in the following project build directory order: (source) directory, output directory, test
      * directory, report directory, and then the additional file-sets.
      *
-     * @throws MojoExecutionException When a directory failed to get deleted.
+     * @throws MojoException When a directory failed to get deleted.
      * @see org.apache.maven.plugin.Mojo#execute()
      */
     public void execute()
-        throws MojoExecutionException
+        throws MojoException
     {
         if ( skip )
         {
-            getLog().info( "Clean is skipped." );
+            LOGGER.info( "Clean is skipped." );
             return;
         }
 
@@ -243,7 +245,7 @@ public class CleanMojo
             fastDir = null;
             if ( fast )
             {
-                getLog().warn( "Fast clean requires maven 3.3.1 or newer, "
+                LOGGER.warn( "Fast clean requires maven 3.3.1 or newer, "
                         + "or an explicit directory to be specified with the 'fastDir' configuration of "
                         + "this plugin, or the 'maven.clean.fastDir' user property to be set." );
             }
@@ -256,7 +258,7 @@ public class CleanMojo
                     + FAST_MODE_BACKGROUND + "', '" + FAST_MODE_AT_END + "' and '" + FAST_MODE_DEFER + "'." );
         }
 
-        Cleaner cleaner = new Cleaner( session, getLog(), isVerbose(), fastDir, fastMode );
+        Cleaner cleaner = new Cleaner( session, isVerbose(), fastDir, fastMode );
 
         try
         {
@@ -274,7 +276,7 @@ public class CleanMojo
                 {
                     if ( fileset.getDirectory() == null )
                     {
-                        throw new MojoExecutionException( "Missing base directory for " + fileset );
+                        throw new MojoException( "Missing base directory for " + fileset );
                     }
                     GlobSelector selector = new GlobSelector( fileset.getIncludes(), fileset.getExcludes(),
                                                               fileset.isUseDefaultExcludes() );
@@ -285,7 +287,7 @@ public class CleanMojo
         }
         catch ( IOException e )
         {
-            throw new MojoExecutionException( "Failed to clean project: " + e.getMessage(), e );
+            throw new MojoException( "Failed to clean project: " + e.getMessage(), e );
         }
     }
 
@@ -296,7 +298,7 @@ public class CleanMojo
      */
     private boolean isVerbose()
     {
-        return ( verbose != null ) ? verbose : getLog().isDebugEnabled();
+        return ( verbose != null ) ? verbose : LOGGER.isDebugEnabled();
     }
 
     /**
