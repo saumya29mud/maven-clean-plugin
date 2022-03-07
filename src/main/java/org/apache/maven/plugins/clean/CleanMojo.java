@@ -46,7 +46,7 @@ import java.io.IOException;
  * @since 2.0
  */
 @Mojo( name = "clean" )
-public class CleanMojo
+public class CleanMojo implements org.apache.maven.api.plugin.Mojo
 {
 
     public static final String FAST_MODE_BACKGROUND = "background";
@@ -220,6 +220,7 @@ public class CleanMojo
      * @throws MojoException When a directory failed to get deleted.
      * @see org.apache.maven.plugin.Mojo#execute()
      */
+    @Override
     public void execute()
         throws MojoException
     {
